@@ -1,4 +1,5 @@
 
+(Sorry for the low resolution, knitting the file would require to rerun all the models and would take a lot of time)
 
 Individual Ratings -- please calculate the following for each of the 17 figures and export it to a csv. Please use tidy data techniques to create the summaries. Please also include your associated R files:
 a. Net favorability: % favorable (very favorable + somewhat favorable) minus % unfavorable (somewhat unfavorable + very unfavorable)
@@ -7,16 +8,16 @@ c. Total Favorability: % very favorable + % somewhat favorable
 
 Please create a figure in R (ideally using ggplot2) displaying Total Favorability for the 17 individuals. The plots will be evaluated on accuracy and readability / appearance.
 
-<img src="figure/pressure-1.png" title="Candidates Total Favorability" alt="Candidates Total Favorability" width="50%" />
+<img src="figure/pressure-1.png" title="Candidates Total Favorability" alt="Candidates Total Favorability" width="50%" align="center" />
 
 
 Please create another figure in R displaying favorability among Democrats and Republicans among the 17 individuals. The plots will be evaluated on accuracy and readability / appearance.
 
-<img src="figure/candidates_favorability-1.png" title="Candidates Total Favorability" alt="Candidates Total Favorability" width="50%" />
+<img src="figure/candidates_favorability-1.png" title="Candidates Total Favorability" alt="Candidates Total Favorability" width="50%" align="center" />
 Develop a statistical model predicting whether Americans have a favorable or unfavorable view of Donald Trump (variable indPresApp_11). You have free range over variable selection and model type. Briefly describe your findings, your model, and why you chose your model in 2-3 paragraphs.
 
 
-<img src="figure/ROC_Curves-1.png" title="ROC_Curve" alt="ROC_Curve" width="50%" />
+<img src="figure/ROC_Curves-1.png" title="ROC_Curve" alt="ROC_Curve" width="50%" align="center"/>
 
 ```
 ## # A tibble: 2 × 3
