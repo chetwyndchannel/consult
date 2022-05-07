@@ -1,0 +1,309 @@
+---
+title: "John_MD_Answers"
+author: "John"
+output: 
+  md_document:
+    toc: true
+date: "`r Sys.Date()`"
+---
+
+```{r isntall_packages, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE, message = FALSE, warning = FALSE)
+
+library(tidyverse)
+library(tidymodels)
+library(plotly)
+library(scales)
+
+```
+```{r download_data, include = F}
+dta <- read.csv("part 1a) Individual Favorability Data.csv", header = T, stringsAsFactors = F)
+# Remove every odd row
+toDelete <- seq(1, nrow(dta), 2)
+dta <- dta[ -toDelete ,]
+# to later use to extract candidate names
+dt <- dta[1,]
+# Remove non-US citizens
+dta <- dta[dta$demCitizen==1,]
+```
+
+Individual Ratings -- please calculate the following for each of the 17 figures and export it to a csv. Please use tidy data techniques to create the summaries. Please also include your associated R files:
+a. Net favorability: % favorable (very favorable + somewhat favorable) minus % unfavorable (somewhat unfavorable + very unfavorable)
+b. Favorability ratio: % favorable (either very favorable or somewhat favorable) divided by % unfavorable (either somewhat unfavorable or very unfavorable)
+c. Total Favorability: % very favorable + % somewhat favorable
+
+```{r first_question}
+names <- dt %>% select(starts_with("indPresApp_")) %>% dplyr::slice(1) %>% str_replace( pattern = "Next we will look at a list of names that are active in politics. It is a long list, please take...-", "")
+
+table_ratings <- data_candidates <- dta %>% select(starts_with("indPresApp_")) %>% rename_with(~ names) %>% mutate(id = row_number())%>% pivot_longer(-id)  %>% mutate(points = case_when(
+  value %in% c(1,2) == T ~ 1,
+  value %in% c(3,4) == T ~ -1,
+  value %in% c(1,2,3,4) != T ~ 0 #Convert 5,6,NA into 0, so we can use nrows() as total responses
+)) %>% group_by(name) %>% summarize(net_favorability = sum(points)/n(),
+                                    favorability_ratio = sum(points>0)/sum(points<0),
+                                    total_favorability = sum(points>0)/n())
+
+#table(table_ratings,n=5)
+
+```
+Please create a figure in R (ideally using ggplot2) displaying Total Favorability for the 17 individuals. The plots will be evaluated on accuracy and readability / appearance.
+
+```{r pressure, fig.cap="Candidates Total Favorability", out.width= "100%"}
+table_ratings %>% ggplot(aes(x=name,y=total_favorability)) + geom_col() +
+  geom_text(aes(label=scales::percent(total_favorability,2)), position=position_dodge(width=0.8), vjust=-0.1)+
+  geom_text(aes(y = total_favorability/2, x = name, label=name), position = position_dodge(width = 0.8), angle = 90, color = "white")+
+  theme_bw()+
+  theme(axis.text.x=element_blank(),axis.ticks.x=element_blank()) + 
+  labs(title = "Candidates Total Favorability", x = NULL)+ ylab("Total Favorability") + xlab("")
+```
+Please create another figure in R displaying favorability among Democrats and Republicans among the 17 individuals. The plots will be evaluated on accuracy and readability / appearance.
+```{r}
+### do the same transformation, but bind column with democrat or republic
+table_ratings2  <- dta %>% select(starts_with("indPresApp_")) %>% rename_with(~ names) %>%
+bind_cols(affiliation = dta$demPidNoLn) %>% pivot_longer(-affiliation)  %>% mutate(points = case_when(
+  value %in% c(1,2) == T ~ 1,
+  value %in% c(3,4) == T ~ -1,
+  value %in% c(1,2,3,4) != T ~ 0 #Convert 5,6,NA into 0, so we can use nrows() as total responses
+)) %>% mutate(affiliation = case_when(affiliation == 1 ~ "Republican",
+                                      affiliation == 2 ~ "Democrat",
+                                      affiliation %in% c(3,4) ~ "Other")) %>%
+  group_by(name, affiliation) %>% summarize(net_favorability = sum(points)/n(),
+                                    favorability_ratio = sum(points>0)/sum(points<1),
+                                    total_favorability = sum(points>0)/n())
+
+```
+
+```{r candidates_favorability, out.width= "100%", fig.cap = "Candidates Total Favorability"}
+table_ratings2 %>% ggplot(aes(x=name,y=total_favorability, fill = affiliation)) + geom_col(position = "dodge2") +
+  geom_text(aes(label=scales::percent(total_favorability,2)), position=position_dodge(width=0.9), vjust=-0.5, size = 2)+
+  theme_bw()+
+  theme(axis.text.x=element_text(angle = 45, vjust = 0.5, hjust=0.5),legend.position="bottom") + 
+  labs(title = "Candidates Total Favorability")+ ylab("Total Favorability") + xlab("") +
+  scale_fill_manual(values = c("navyblue","forestgreen","darkred"))+ylim(c(0,1))
+
+```
+Develop a statistical model predicting whether Americans have a favorable or unfavorable view of Donald Trump (variable indPresApp_11). You have free range over variable selection and model type. Briefly describe your findings, your model, and why you chose your model in 2-3 paragraphs.
+```{r data_cleaning, include = F}
+#  Convert 172a and 172b to the same format
+train_data <- dta  %>%  mutate(Q172b = case_when( 
+  Q172b == 1 ~ 4,
+  Q172b == 2 ~ 3,
+  Q172b == 3 ~ 2,
+  Q172b == 2 ~ 1
+))%>%
+  dplyr::mutate(Q172 = coalesce(as.numeric(Q172a),Q172b), .keep = "unused")%>%
+  mutate(Q172 = replace_na(Q172,5)) %>% # Replace all NA's with Don't Know/ No Opinion
+  select(-c(PR1,PR2,PR3)) %>%  #I don't see PRs being relevant
+  select(-demRVoter2) %>% #voter Registration confirmation is irrelevant
+  mutate(demPid2 = coalesce(demPidLean,demPidClos), .keep = "unused") %>% #Make all combinations of Week Republican...Independent leaning to Democrats
+  mutate(demPid = str_c(demPidNoLn,demPid2), .keep="unused")%>%
+  select(-demCitizen) %>% #Remove Citizen Column
+  select(-starts_with('indPresApp')) %>% #We are interested in Donald not all candidates. removed all candidates
+  bind_cols(support_donald =dta$"indPresApp_indPresApp_11")%>%#Add Donald Back
+  mutate(support_donald = case_when( #Make Support Donald Outcome, create NA for never_heard and no opinion
+    support_donald %in% c(1,2) == T ~ T,
+    support_donald %in% c(3,4) == F ~ F,
+    support_donald %in% c(1,2,3,4) != T ~ NA
+  )) %>% filter(support_donald %in% c(T,F)) %>%
+  mutate(across(where(is.character), as.factor))%>% #Convert columns into factors
+  mutate(demAgeFull = as.numeric(demAgeFull),
+         Q172 = as.numeric(Q172),
+         support_donald = as.factor(support_donald)) 
+
+# table(test$demPidNoLn, color = test$Donald)
+```
+
+
+```{r rf_model, include = F, eval = FALSE}
+# Split data
+split <- initial_split(train_data,
+                       prop = 0.75)
+train_data <- training(split)
+test_data <- testing(split)
+
+# Cross validation dataset
+train_data_cv <- vfold_cv(data = train_data, v= 5, repeats = 5, strata = support_donald)
+
+#### Random forest fit
+## Random Forest
+rf_tune_model <- rand_forest(trees = tune(),min_n = tune()) %>%
+  set_mode("classification") %>%
+  set_engine("ranger")
+  
+rf_grid <- grid_random(parameters(rf_tune_model),
+               size = 5)
+
+donald_tune_wkfl <- workflow() %>% 
+  add_model(rf_tune_model) %>%
+  add_recipe(donald_recipe)
+
+# Hyperparameter tuning
+rf_tuning <- donald_tune_wkfl %>% 
+  tune_grid(resamples = train_data_cv,
+            grid = rf_grid)
+
+# View results
+#rf_tuning %>% 
+#  collect_metrics()
+
+rf_tuning_results <- rf_tuning %>% 
+  collect_metrics(summarize = FALSE)
+
+# Explore detailed ROC AUC results for each fold
+rf_tuning_results %>% 
+  filter(.metric == "roc_auc") %>% 
+  group_by(id) %>% 
+  summarize(min_roc_auc = min(.estimate),
+            median_roc_auc = median(.estimate),
+            max_roc_auc = max(.estimate))
+
+best_rf_model <- rf_tuning %>% 
+  # Choose the best model based on roc_auc
+  select_best(metric = 'roc_auc')
+
+# Finalize workflow
+final_donald_wkfl <- donald_tune_wkfl %>% 
+  finalize_workflow(best_rf_model)
+
+# Train finalized decision tree workflow
+donald_final_fit <- final_donald_wkfl %>% 
+  last_fit(split = split)
+
+```
+
+
+
+```{r rf_ROC}
+# View performance metrics
+# donald_final_fit %>% 
+#   collect_metrics()
+
+# # Create an ROC curve
+# donald_final_fit %>% 
+#   # Collect predictions
+#   collect_predictions() %>%
+#   # Calculate ROC curve metrics
+#   roc_curve(truth = support_donald, .pred_FALSE) %>%
+#   # Plot the ROC curve
+#   autoplot()
+```
+```{r XGBoost_model, include = F, eval = FALSE}
+# Set up XGBoost model
+xgb_spec <- boost_tree(
+  trees = 1000, 
+  tree_depth = tune(), min_n = tune(), 
+  loss_reduction = tune(),                     ## first three: model complexity
+  sample_size = tune(), mtry = tune(),         ## randomness
+  learn_rate = tune(),                         ## step size
+) %>% 
+  set_engine("xgboost") %>% 
+  set_mode("classification")
+
+# Create a workflow
+xgb_wf <- workflow() %>%
+  add_recipe(donald_recipe) %>%
+  add_model(xgb_spec)
+#
+vb_folds <- vfold_cv(train_data, v= 5, repeats = 5,strata = support_donald)
+#
+xgb_grid <- grid_latin_hypercube(
+  tree_depth(),
+  min_n(),
+  loss_reduction(),
+  sample_size = sample_prop(),
+  finalize(mtry(), train_data),
+  learn_rate(),
+  size = 5
+)
+# 
+set.seed(234)
+xgb_res <- tune_grid(
+  xgb_wf,
+  resamples = vb_folds,
+  grid = xgb_grid,
+  control = control_grid(save_pred = TRUE)
+)
+
+best_xgb_model <- select_best(xgb_res, "roc_auc")
+
+# Finalize workflow
+final_donald_wkfl2 <- xgb_wf %>% 
+  finalize_workflow(best_xgb_model)
+
+# Train finalized decision tree workflow
+donald_final_fit2 <- final_donald_wkfl2 %>% 
+  last_fit(split = split)
+
+
+# # Create an ROC curve
+# donald_final_fit2 %>% 
+#   # Collect predictions
+#   collect_predictions() %>%
+#   # Calculate ROC curve metrics
+#   roc_curve(truth = support_donald, .pred_FALSE) %>%
+#   # Plot the ROC curve
+#   autoplot()
+
+
+```
+
+
+
+```{r ROC_Curves, fig.cap = "ROC_Curve", out.width= "100%"}
+donald_final_fit2 %>% 
+  # Collect predictions
+  collect_predictions() %>%
+  # Calculate ROC curve metrics
+  roc_curve(truth = support_donald, .pred_FALSE) %>% mutate(name = "XGBoost")%>%
+  bind_rows(donald_final_fit %>% collect_predictions() %>% roc_curve(truth = support_donald,   .pred_FALSE) %>% mutate(name = "RandomForest")) %>% 
+  ggplot(aes(x = (1-specificity), y = sensitivity, color = name)) + geom_line() + geom_abline(color = "grey")
+```
+```{r metrics}
+donald_final_fit %>% collect_metrics(summarize = T) %>% mutate(model = "rf") %>%
+  bind_rows(donald_final_fit2 %>% collect_metrics(summarize = F) %>% mutate(model = "xgb")) %>%
+  select(-c(.estimator, .config)) %>% pivot_wider(names_from = model, values_from = .estimate)
+```
+
+
+
+
+```{r, eval = FALSE}
+
+#### Logistic fit
+logistic_fit <- logistic_model %>% 
+  fit(support_donald ~., data = donald_training_prep)
+
+# Obtain class predictions
+class_preds <- predict(logistic_fit, new_data = donald_test_prep,
+                   type = 'class')
+
+# Obtain estimated probabilities
+prob_preds <- predict(logistic_fit, new_data = donald_test_prep, 
+                  type = "prob")
+
+# Combine test set results
+donald_results <- donald_test_prep %>% 
+  select(support_donald) %>% 
+  bind_cols(class_preds, prob_preds)
+
+donald_results
+
+# Create a confusion matrix
+donald_results %>% 
+  conf_mat(truth = support_donald, estimate = .pred_class)
+
+# Calculate sensitivity
+donald_results %>% 
+  sens(truth = support_donald, estimate = .pred_class)
+
+# Calculate specificity
+donald_results %>% 
+  spec(truth = support_donald, estimate = .pred_class)
+
+# Plot ROC curve
+donald_results %>% 
+  roc_curve(truth = support_donald, .pred_TRUE) %>% 
+  autoplot()
+```
+
+
